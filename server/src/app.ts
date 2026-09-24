@@ -13,6 +13,7 @@ import sourceRoutes from './routes/sources';
 import alertRoutes from './routes/alerts';
 import historyRoutes from './routes/history';
 import layoutRoutes from './routes/layout';
+import derivedRoutes from './routes/derived';
 import realtimeRoutes from './routes/realtime';
 import testRoutes from './routes/test';
 
@@ -37,6 +38,7 @@ export async function createApp(config: AppConfig, options: CreateServerOptions 
       await api.register((a) => alertRoutes(a, rt));
       await api.register((a) => historyRoutes(a, rt));
       await api.register((a) => layoutRoutes(a, rt));
+      await api.register((a) => derivedRoutes(a, rt));
       await api.register((a) => realtimeRoutes(a, rt));
       if (config.enableTestApi) {
         app.log.warn('测试专用接口已开启（ENABLE_TEST_API=true），请勿在生产打开');

@@ -16,9 +16,9 @@ export default async function historyRoutes(app: FastifyInstance, rt: Runtime): 
     if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) {
       return reply.code(400).send({ error: 'invalid_range', message: 'from/to 必须是毫秒时间戳且 from <= to' });
     }
-    const all = rt.registry.list().map((s) => s.def.id);
+    const all = [...rt.registry.list().map((s) => s.def.id), ...rt.derived.list().map((d) => d.id)];
     const wanted = req.query.sources ? req.query.sources.split(',').map((s) => s.trim()).filter(Boolean) : all;
-    const unknown = wanted.filter((id) => !rt.registry.get(id));
+    const unknown = wanted.filter((id) => !rt.registry.get(id) && !rt.derived.has(id));
     if (unknown.length) return reply.code(400).send({ error: 'unknown_sources', sources: unknown });
 
     const series: Record<string, { sourceId: string; points: { ts: number; value: number }[] }> = {};

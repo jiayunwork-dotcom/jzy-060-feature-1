@@ -1,10 +1,11 @@
-/** 应用外壳：顶部导航 + 路由（仪表板 / 历史回放 / 数据源管理）。 */
+/** 应用外壳：顶部导航 + 路由（仪表板 / 历史回放 / 数据源管理 / 派生指标）。 */
 import { useEffect } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { useDashboard } from './store/useDashboard';
 import DashboardPage from './pages/DashboardPage';
 import ReplayPage from './pages/ReplayPage';
 import SourcesPage from './pages/SourcesPage';
+import DerivedPage from './pages/DerivedPage';
 import Toasts from './components/Toasts';
 import { formatClock } from './utils/format';
 
@@ -30,6 +31,9 @@ export default function App() {
           <NavLink to="/sources" className={({ isActive }) => `nav-link ${isActive ? 'nav-active' : ''}`}>
             数据源管理
           </NavLink>
+          <NavLink to="/derived" className={({ isActive }) => `nav-link ${isActive ? 'nav-active' : ''}`}>
+            派生指标
+          </NavLink>
         </nav>
         <div className="topbar-meta">
           {criticalCount > 0 ? (
@@ -47,6 +51,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/replay" element={<ReplayPage />} />
           <Route path="/sources" element={<SourcesPage />} />
+          <Route path="/derived" element={<DerivedPage />} />
         </Routes>
       </main>
       <Toasts />

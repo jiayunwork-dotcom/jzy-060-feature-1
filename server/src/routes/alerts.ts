@@ -21,7 +21,8 @@ interface RuleIdParam {
 
 function validateRule(body: RuleBody, rt: Runtime): { ok: true; sourceId: string; level: AlertLevel; operator: AlertOperator; threshold: number; enabled: boolean; note: string } | { ok: false; message: string } {
   const sourceId = String(body.sourceId ?? '');
-  if (!rt.registry.get(sourceId)) return { ok: false, message: 'sourceId 不存在' };
+  // 原始采集指标与派生指标都可以设告警
+  if (!rt.registry.get(sourceId) && !rt.derived.has(sourceId)) return { ok: false, message: 'sourceId 不存在' };
   const level = body.level as AlertLevel;
   if (!LEVELS.includes(level)) return { ok: false, message: 'level 必须是 warning 或 critical' };
   const operator = body.operator as AlertOperator;

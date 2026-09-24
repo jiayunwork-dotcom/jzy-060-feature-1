@@ -1,5 +1,5 @@
 /** REST 接口封装。生产与开发态都走同源 /api。 */
-import type { AlertLevel, AlertOperator, HistoryResponse, LayoutConfig, SourceState, AlertRule } from '../types';
+import type { AlertLevel, AlertOperator, DerivedMetricDef, DerivedMetricInfo, HistoryResponse, LayoutConfig, SourceState, AlertRule } from '../types';
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -43,6 +43,18 @@ export const api = {
 
   saveLayout: (layout: LayoutConfig) =>
     jsonFetch<{ ok: true }>('/api/layout', { method: 'PUT', body: JSON.stringify({ layout }) }),
+
+  // ---------- 派生指标（算出来的指标） ----------
+
+  derived: () => jsonFetch<DerivedMetricInfo[]>('/api/derived'),
+
+  createDerived: (input: { id?: string; name: string; unit: string; decimals: number; max?: number; expression: string; description?: string }) =>
+    jsonFetch<DerivedMetricDef>('/api/derived', { method: 'POST', body: JSON.stringify(input) }),
+
+  updateDerived: (id: string, patch: Partial<{ name: string; unit: string; decimals: number; max: number; expression: string; description: string }>) =>
+    jsonFetch<DerivedMetricDef>(`/api/derived/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+
+  deleteDerived: (id: string) => jsonFetch<{ ok: true; removedRules: string[] }>(`/api/derived/${id}`, { method: 'DELETE' }),
 };
 
 /** WebSocket 地址与当前页面同源，走 /api/ws。 */

@@ -33,12 +33,12 @@ function parsePoints(body: IngestBody, rt: Runtime): { ok: true; points: MetricP
 }
 
 export default async function testRoutes(app: FastifyInstance, rt: Runtime): Promise<void> {
-  // 确定性地注入若干点（走与真实节拍完全相同的留档+告警+推送管线）
+  // 确定性地注入若干点（走与真实节拍完全相同的留档+告警+派生计算+推送管线）
   app.post<{ Body: IngestBody }>('/test/ingest', async (req, reply) => {
     const parsed = parsePoints(req.body ?? {}, rt);
     if (!parsed.ok) return reply.code(400).send({ error: 'invalid_points', message: parsed.message });
-    const events = rt.ingestPoints(parsed.points);
-    return reply.code(201).send({ ingested: parsed.points, events });
+    const { events, derived } = rt.ingestPoints(parsed.points);
+    return reply.code(201).send({ ingested: parsed.points, derived, events });
   });
 
   // 立即按保留窗口滚动淘汰；compact=true 时同步重写压缩磁盘文件

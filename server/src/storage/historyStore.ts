@@ -166,6 +166,34 @@ export class HistoryStore {
     return out;
   }
 
+  /**
+   * 滚动窗口取值：返回 (to - windowMs, to] 内、按时间升序的值序列，
+   * 供派生指标的窗口聚合（avg/min/max/last）使用。窗口内无点返回空数组。
+   */
+  windowValues(sourceId: string, windowMs: number, to: number): number[] {
+    const rows = this.series.get(sourceId) ?? [];
+    const fromExclusive = to - windowMs;
+    const out: number[] = [];
+    for (const r of rows) {
+      if (r.ts <= fromExclusive) continue;
+      if (r.ts > to) break;
+      out.push(r.value);
+    }
+    return out;
+  }
+
+  /** 移除某一路序列（内存 + 磁盘文件），派生指标被删除时调用。 */
+  remove(sourceId: string): void {
+    this.series.delete(sourceId);
+    this.loadedUpTo.delete(sourceId);
+    this.dirty.delete(sourceId);
+    try {
+      fs.unlinkSync(this.fileOf(sourceId));
+    } catch {
+      /* 文件本就不存在 */
+    }
+  }
+
   latest(sourceId: string): MetricPoint | null {
     const rows = this.series.get(sourceId) ?? [];
     const last = rows[rows.length - 1];

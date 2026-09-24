@@ -21,12 +21,14 @@ export interface TestServer {
 
 let portCounter = 4100;
 
-export async function startServer(opts: { tickMs?: number; retentionMs?: number } = {}): Promise<TestServer> {
+export async function startServer(opts: { tickMs?: number; retentionMs?: number; dataDir?: string } = {}): Promise<TestServer> {
   if (!fs.existsSync(SERVER_ENTRY)) {
     throw new Error('未找到 server/dist/index.js，请先执行 npm run build（workspace server）');
   }
   const port = ++portCounter;
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-dash-test-'));
+  // 调用方自带数据目录时（如“重启后定义仍在”的测试），stop 不负责清理
+  const ownDir = !opts.dataDir;
+  const dataDir = opts.dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'ops-dash-test-'));
   const child = spawn(process.execPath, [SERVER_ENTRY], {
     env: {
       ...process.env,
@@ -74,10 +76,12 @@ export async function startServer(opts: { tickMs?: number; retentionMs?: number 
         }, 3000);
         const finish = () => {
           clearTimeout(timer);
-          try {
-            fs.rmSync(dataDir, { recursive: true, force: true });
-          } catch {
-            /* 忽略清理失败 */
+          if (ownDir) {
+            try {
+              fs.rmSync(dataDir, { recursive: true, force: true });
+            } catch {
+              /* 忽略清理失败 */
+            }
           }
           resolve();
         };

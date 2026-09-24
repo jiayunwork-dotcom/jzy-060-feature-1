@@ -3,7 +3,7 @@
  * 前端在 web/src/types.ts 内保持结构一致的镜像定义。
  */
 
-export type SourceKind = 'system' | 'business';
+export type SourceKind = 'system' | 'business' | 'derived';
 export type SourceStatus = 'ok' | 'error';
 
 export interface SourceDef {
@@ -65,6 +65,26 @@ export interface AlertEvent {
 
 /** 当前仍处于激活状态的告警（由规则 id 索引） */
 export type ActiveAlert = AlertEvent;
+
+/**
+ * 派生指标（用户定义的“算出来的指标”）：
+ * 由名字、单位、小数位与计算式定义；计算式可引用原始指标与其它派生指标，
+ * 支持四则运算、括号、常数与窗口聚合（avg/min/max/last(指标, 5m)）。
+ * 定义持久化在 config.json；产出的点与原始指标一样逐点落档历史。
+ */
+export interface DerivedMetricDef {
+  /** 标识符，表达式里互相引用就用它；全局唯一且不与原始指标重名 */
+  id: string;
+  name: string;
+  unit: string;
+  decimals: number;
+  /** 展示用满量程（仪表盘/对比图），用户可不填，默认 100 */
+  max: number;
+  expression: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+}
 
 /** 前端保存下来的布局（react-grid-layout 的布局数组原样存储） */
 export type LayoutConfig = Record<string, unknown>[];

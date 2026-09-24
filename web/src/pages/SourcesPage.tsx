@@ -20,7 +20,7 @@ export default function SourcesPage() {
     }
   };
 
-  const kindLabel = (kind: string) => (kind === 'system' ? '系统指标' : '业务指标');
+  const kindLabel = (kind: string) => (kind === 'system' ? '系统指标' : kind === 'derived' ? '派生指标' : '业务指标');
 
   return (
     <div>

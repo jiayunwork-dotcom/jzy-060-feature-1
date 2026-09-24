@@ -1,6 +1,6 @@
 /** 与后端 server/src/types.ts 结构保持一致的前端镜像定义。 */
 
-export type SourceKind = 'system' | 'business';
+export type SourceKind = 'system' | 'business' | 'derived';
 export type SourceStatus = 'ok' | 'error';
 export type AlertLevel = 'warning' | 'critical';
 export type AlertOperator = '>' | '<' | '>=' | '<=';
@@ -58,6 +58,26 @@ export interface HistoryResponse {
   to: number;
   tickMs: number;
   series: Record<string, { sourceId: string; points: { ts: number; value: number }[] }>;
+}
+
+/** 派生指标（用户定义的“算出来的指标”） */
+export interface DerivedMetricDef {
+  id: string;
+  name: string;
+  unit: string;
+  decimals: number;
+  max: number;
+  expression: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** GET /api/derived 的列表项：定义 + 依赖关系 + 开关 */
+export interface DerivedMetricInfo extends DerivedMetricDef {
+  refs: string[];
+  dependents: string[];
+  enabled: boolean;
 }
 
 export type RGLPosition = {
