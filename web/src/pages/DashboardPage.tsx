@@ -1,4 +1,4 @@
-/** 仪表板主页：可布局网格内放置对比柱图、各源表盘与趋势折线。 */
+/** 仪表板主页：可布局网格内放置对比柱图、各指标表盘与趋势折线（含派生指标）。 */
 import { useMemo } from 'react';
 import { useDashboard } from '../store/useDashboard';
 import ChartCard from '../components/ChartCard';
@@ -7,84 +7,95 @@ import GaugeChart from '../components/charts/GaugeChart';
 import TrendLine from '../components/charts/TrendLine';
 import CompareBars from '../components/charts/CompareBars';
 import AlertBanner from '../components/AlertBanner';
+import { buildMetricViews, type MetricView } from '../utils/metrics';
 
 export default function DashboardPage() {
   const sources = useDashboard((s) => s.sources);
+  const derived = useDashboard((s) => s.derived);
   const series = useDashboard((s) => s.series);
   const rules = useDashboard((s) => s.rules);
   const actives = useDashboard((s) => s.actives);
   const connected = useDashboard((s) => s.connected);
 
-  const enabledSources = sources.filter((s) => s.enabled);
-  const levelOf = (sourceId: string): 'none' | 'warning' | 'critical' => {
-    const active = actives.filter((a) => a.sourceId === sourceId);
+  // 统一视图：已开启的原始采集源 + 未失效的派生指标
+  const metrics: MetricView[] = useMemo(
+    () => buildMetricViews(sources, derived).filter((m) => (m.kind === 'derived' ? !m.broken : m.enabled)),
+    [sources, derived],
+  );
+
+  const levelOf = (id: string): 'none' | 'warning' | 'critical' => {
+    const active = actives.filter((a) => a.sourceId === id);
     if (active.some((a) => a.level === 'critical')) return 'critical';
     if (active.some((a) => a.level === 'warning')) return 'warning';
     return 'none';
   };
   const latestOf = useMemo(() => {
     const map: Record<string, number | null> = {};
-    for (const s of sources) {
-      const arr = series[s.def.id];
-      map[s.def.id] = arr && arr.length ? arr[arr.length - 1].value : null;
+    for (const m of metrics) {
+      const arr = series[m.id];
+      map[m.id] = arr && arr.length ? arr[arr.length - 1].value : null;
     }
     return map;
-  }, [sources, series]);
+  }, [metrics, series]);
 
   const widgets = [
     {
       key: 'compare',
       default: { i: 'compare', x: 0, y: 0, w: 12, h: 5 },
       node: (
-        <ChartCard title="指标横向对比" subtitle="当前值占满量程百分比（按告警级别变色）">
-          <CompareBars sources={enabledSources} latest={latestOf} levelOf={levelOf} height={272} />
+        <ChartCard title="指标横向对比" subtitle="当前值占满量程百分比（按告警级别变色），含派生指标">
+          <CompareBars metrics={metrics} latest={latestOf} levelOf={levelOf} height={272} />
         </ChartCard>
       ),
     },
-    ...enabledSources.map((s, idx) => {
-      const pts = series[s.def.id] ?? [];
-      const level = levelOf(s.def.id);
+    ...metrics.map((m, idx) => {
+      const pts = series[m.id] ?? [];
+      const level = levelOf(m.id);
       return {
-        key: `gauge-${s.def.id}`,
+        key: `gauge-${m.id}`,
         default: {
-          i: `gauge-${s.def.id}`,
+          i: `gauge-${m.id}`,
           x: (idx * 4) % 12,
           y: 5 + Math.floor(idx / 3) * 5,
           w: 4,
           h: 5,
         },
         node: (
-          <ChartCard title={s.def.name} source={s} level={level}>
+          <ChartCard
+            title={m.kind === 'derived' ? `Σ ${m.name}` : m.name}
+            metric={m}
+            level={level}
+          >
             <GaugeChart
-              title={s.status === 'error' ? '采集中断' : s.def.description}
-              unit={s.def.unit}
-              max={s.def.max}
-              decimals={s.def.decimals}
+              title={m.kind === 'derived' ? (m.status === 'error' ? (m.lastError ?? '计算异常') : m.formula ?? m.description) : m.status === 'error' ? '采集中断' : m.description}
+              unit={m.unit}
+              max={m.max}
+              decimals={m.decimals}
               value={pts.length ? pts[pts.length - 1].value : null}
-              rules={rules.filter((r) => r.sourceId === s.def.id && r.enabled)}
+              rules={rules.filter((r) => r.sourceId === m.id && r.enabled)}
               level={level}
             />
           </ChartCard>
         ),
       };
     }),
-    ...enabledSources.map((s, idx) => {
-      const pts = series[s.def.id] ?? [];
-      const level = levelOf(s.def.id);
+    ...metrics.map((m, idx) => {
+      const pts = series[m.id] ?? [];
+      const level = levelOf(m.id);
       return {
-        key: `trend-${s.def.id}`,
+        key: `trend-${m.id}`,
         default: {
-          i: `trend-${s.def.id}`,
+          i: `trend-${m.id}`,
           x: (idx % 2) * 6,
           y: 100 + Math.floor(idx / 2) * 6,
           w: 6,
           h: 6,
         },
         node: (
-          <ChartCard title={`${s.def.name} · 最近 5 分钟走势`} source={s} level={level}>
+          <ChartCard title={`${m.kind === 'derived' ? 'Σ ' : ''}${m.name} · 最近 5 分钟走势`} metric={m} level={level}>
             <TrendLine
-              series={[{ sourceId: s.def.id, name: s.def.name, color: '#3b82f6', points: pts }]}
-              rules={rules.filter((r) => r.sourceId === s.def.id && r.enabled)}
+              series={[{ sourceId: m.id, name: m.name, color: m.kind === 'derived' ? '#a855f7' : '#3b82f6', points: pts }]}
+              rules={rules.filter((r) => r.sourceId === m.id && r.enabled)}
               level={level}
               height={250}
             />

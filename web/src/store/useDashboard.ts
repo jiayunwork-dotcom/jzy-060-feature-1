@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand';
 import { api, wsUrl } from '../api/client';
-import type { AlertEvent, AlertRule, MetricPoint, SourceState } from '../types';
+import type { AlertEvent, AlertRule, DerivedState, MetricPoint, SourceState } from '../types';
 
 const WINDOW_MS = 5 * 60 * 1000 + 5000;
 const MAX_POINTS_PER_SOURCE = 400;
@@ -21,9 +21,10 @@ export interface Toast {
 interface DashboardState {
   connected: boolean;
   sources: SourceState[];
+  derived: DerivedState[];
   rules: AlertRule[];
   actives: AlertEvent[];
-  /** sourceId -> 最近五分钟点序列 */
+  /** sourceId（原始或派生）-> 最近五分钟点序列 */
   series: Record<string, MetricPoint[]>;
   toasts: Toast[];
   lastTickTs: number | null;
@@ -32,6 +33,7 @@ interface DashboardState {
   pushToast: (t: Omit<Toast, 'id' | 'ts'>) => void;
   dismissToast: (id: string) => void;
   refreshRules: () => Promise<void>;
+  refreshDerived: () => Promise<void>;
 }
 
 function appendPoint(series: Record<string, MetricPoint[]>, point: MetricPoint, now: number): void {
@@ -44,8 +46,8 @@ function appendPoint(series: Record<string, MetricPoint[]>, point: MetricPoint, 
   }
 }
 
-function sourceName(sources: SourceState[], id: string): string {
-  return sources.find((s) => s.def.id === id)?.def.name ?? id;
+function sourceName(sources: SourceState[], derived: DerivedState[], id: string): string {
+  return sources.find((s) => s.def.id === id)?.def.name ?? derived.find((d) => d.def.id === id)?.def.name ?? id;
 }
 
 export const useDashboard = create<DashboardState>((set, get) => {
@@ -58,10 +60,11 @@ export const useDashboard = create<DashboardState>((set, get) => {
     const state = get();
     switch (msg.type) {
       case 'snapshot': {
-        // 快照只同步源/规则/激活态；latest 与同一拍的 metrics 重复，
+        // 快照只同步源/派生/规则/激活态；latest 与同一拍的 metrics 重复，
         // 不再重复追加进滑动窗口（走势由初始 /history + 后续 metrics 构成）。
         set({
           sources: msg.sources,
+          derived: msg.derived ?? [],
           rules: msg.rules,
           actives: msg.actives,
           lastTickTs: msg.ts,
@@ -80,6 +83,10 @@ export const useDashboard = create<DashboardState>((set, get) => {
         set({ sources: state.sources.map((s) => (s.def.id === msg.source.def.id ? msg.source : s)) });
         break;
       }
+      case 'derived': {
+        set({ derived: msg.derived });
+        break;
+      }
       case 'rules':
         set({ rules: msg.rules });
         break;
@@ -90,7 +97,7 @@ export const useDashboard = create<DashboardState>((set, get) => {
           get().pushToast({
             level: event.level,
             title: event.level === 'critical' ? '严重告警' : '警告',
-            message: `${sourceName(get().sources, event.sourceId)} 当前 ${event.value}，已${event.operator}阈值 ${event.threshold}`,
+            message: `${sourceName(get().sources, get().derived, event.sourceId)} 当前 ${event.value}，已${event.operator}阈值 ${event.threshold}`,
           });
         }
         break;
@@ -152,6 +159,7 @@ export const useDashboard = create<DashboardState>((set, get) => {
   return {
     connected: false,
     sources: [],
+    derived: [],
     rules: [],
     actives: [],
     series: {},
@@ -167,5 +175,6 @@ export const useDashboard = create<DashboardState>((set, get) => {
     },
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     refreshRules: async () => set({ rules: await api.rules() }),
+    refreshDerived: async () => set({ derived: await api.derived() }),
   };
 });

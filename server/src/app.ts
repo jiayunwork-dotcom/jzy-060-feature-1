@@ -10,6 +10,7 @@ import fastifyStatic from '@fastify/static';
 import type { AppConfig } from './config';
 import { Runtime } from './runtime';
 import sourceRoutes from './routes/sources';
+import derivedRoutes from './routes/derived';
 import alertRoutes from './routes/alerts';
 import historyRoutes from './routes/history';
 import layoutRoutes from './routes/layout';
@@ -34,6 +35,7 @@ export async function createApp(config: AppConfig, options: CreateServerOptions 
   await app.register(
     async (api) => {
       await api.register((a) => sourceRoutes(a, rt));
+      await api.register((a) => derivedRoutes(a, rt));
       await api.register((a) => alertRoutes(a, rt));
       await api.register((a) => historyRoutes(a, rt));
       await api.register((a) => layoutRoutes(a, rt));

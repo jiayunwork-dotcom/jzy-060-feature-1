@@ -1,13 +1,18 @@
-/** 数据源管理页：源列表、正常/异常状态、采集开关集中操作，并管理该源的告警规则。 */
+/**
+ * 数据源管理页：原始采集源列表、正常/异常状态、采集开关，
+ * 用户自定义的派生（算出来的）指标管理，以及全部告警规则。
+ */
 import { useState } from 'react';
 import { api } from '../api/client';
 import { useDashboard } from '../store/useDashboard';
 import ChartCard from '../components/ChartCard';
 import AlertRulesPanel from '../components/AlertRulesPanel';
+import DerivedPanel from '../components/DerivedPanel';
 import { formatClock } from '../utils/format';
 
 export default function SourcesPage() {
   const sources = useDashboard((s) => s.sources);
+  const derived = useDashboard((s) => s.derived);
   const [busy, setBusy] = useState<string | null>(null);
 
   const toggle = async (id: string, enabled: boolean) => {
@@ -26,10 +31,16 @@ export default function SourcesPage() {
     <div>
       <div className="page-head">
         <h2>数据源管理</h2>
-        <span className="conn conn-on">共 {sources.length} 路 · 开启 {sources.filter((s) => s.enabled).length} 路 · 异常 {sources.filter((s) => s.status === 'error' && s.enabled).length} 路</span>
+        <span className="conn conn-on">
+          原始源 {sources.length} 路（开启 {sources.filter((s) => s.enabled).length}）· 派生指标 {derived.length} 路
+        </span>
       </div>
 
-      <ChartCard title="采集源列表" subtitle="关闭后该源不再产生新的数据点，也不会推送">
+      <ChartCard title="派生（算出来的）指标" subtitle="由计算式实时算出，与原始指标一样可看曲线、设告警、进回放；定义持久化，重启后仍在">
+        <DerivedPanel />
+      </ChartCard>
+
+      <ChartCard title="原始采集源列表" subtitle="关闭后该源不再产生新数据点，依赖它的派生指标会立即标记异常，不会用旧值凑算">
         <table className="source-table">
           <thead>
             <tr>
@@ -83,7 +94,7 @@ export default function SourcesPage() {
       </ChartCard>
 
       <ChartCard title="全部告警规则">
-        <AlertRulesPanel sources={sources} />
+        <AlertRulesPanel />
       </ChartCard>
     </div>
   );

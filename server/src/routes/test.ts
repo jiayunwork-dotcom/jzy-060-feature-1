@@ -23,7 +23,9 @@ function parsePoints(body: IngestBody, rt: Runtime): { ok: true; points: MetricP
   const points: MetricPoint[] = [];
   for (const p of body.points) {
     const sourceId = String(p.sourceId ?? '');
-    if (!rt.registry.get(sourceId)) return { ok: false, message: `未知数据源: ${sourceId}` };
+    if (!rt.registry.get(sourceId) && !rt.derived.getState(sourceId)) {
+      return { ok: false, message: `未知数据源: ${sourceId}` };
+    }
     const ts = p.ts === undefined ? Date.now() : Number(p.ts);
     const value = Number(p.value);
     if (!Number.isFinite(ts) || !Number.isFinite(value)) return { ok: false, message: 'ts/value 必须是数字' };

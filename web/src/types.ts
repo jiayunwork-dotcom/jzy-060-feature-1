@@ -2,6 +2,7 @@
 
 export type SourceKind = 'system' | 'business';
 export type SourceStatus = 'ok' | 'error';
+export type DerivedStatus = 'ok' | 'error';
 export type AlertLevel = 'warning' | 'critical';
 export type AlertOperator = '>' | '<' | '>=' | '<=';
 
@@ -27,6 +28,29 @@ export interface SourceState {
   status: SourceStatus;
   lastError: string | null;
   lastPointTs: number | null;
+}
+
+/** 派生（算出来的）指标定义，与后端 DerivedDef 一致 */
+export interface DerivedDef {
+  id: string;
+  name: string;
+  unit: string;
+  decimals: number;
+  max: number;
+  formula: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 派生指标运行态，与后端 DerivedState 一致 */
+export interface DerivedState {
+  def: DerivedDef;
+  status: DerivedStatus;
+  lastError: string | null;
+  lastPointTs: number | null;
+  dependsOn: string[];
+  broken: boolean;
 }
 
 export interface AlertRule {

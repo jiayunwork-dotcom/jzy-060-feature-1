@@ -1,6 +1,10 @@
 /**
- * 运行时装配：把注册表、模拟器、历史留档、告警引擎、推送中心串起来，
- * 并驱动每秒一次的实时节拍与 24 小时窗口的滚动淘汰。
+ * 运行时装配：把注册表、模拟器、历史留档、告警引擎、派生指标引擎、
+ * 推送中心串起来，并驱动每秒一次的实时节拍与 24 小时窗口的滚动淘汰。
+ *
+ * 每拍数据管线：
+ *   原始点留档 -> 原始点告警判定 -> 派生引擎按拓扑序算出派生点
+ *   （派生点同样留档 + 告警判定）-> 原始点与派生点一起通过长连接推给页面。
  */
 import type { AppConfig } from './config';
 import type { AlertEvent, MetricPoint, SourceState } from './types';
@@ -9,6 +13,7 @@ import { HistoryStore } from './storage/historyStore';
 import { SourceRegistry } from './sources/registry';
 import { Simulator } from './sources/simulator';
 import { AlertEngine } from './alerts/engine';
+import { DerivedEngine } from './derived/engine';
 import { Hub } from './realtime/hub';
 
 export interface IngestResult {
@@ -23,6 +28,7 @@ export class Runtime {
   readonly registry: SourceRegistry;
   readonly simulator: Simulator;
   readonly alerts: AlertEngine;
+  readonly derived: DerivedEngine;
   readonly hub: Hub;
 
   private tickTimer: NodeJS.Timeout | null = null;
@@ -34,17 +40,23 @@ export class Runtime {
     this.history = new HistoryStore(config.dataDir, config.retentionMs);
     this.registry = new SourceRegistry(this.configStore);
     for (const s of this.registry.list()) this.history.register(s.def.id);
+    // 重启后已落盘的派生历史同样载入内存
+    for (const d of this.configStore.getDerived()) this.history.register(d.id);
     this.simulator = new Simulator(this.registry);
     this.alerts = new AlertEngine(this.configStore);
+    this.derived = new DerivedEngine(this.configStore, this.history, this.registry, this.alerts);
     this.hub = new Hub();
   }
 
-  /** 冷启动：预填五分钟历史，然后开始周期性产出与推送。 */
+  /** 冷启动：预填五分钟历史（原始 + 派生），然后开始周期性产出与推送。 */
   start(): void {
     const now = Date.now();
     this.simulator.prefill(now, this.config.prefillMs, this.config.tickMs, (sourceId, ts, value) => {
       this.history.add(sourceId, ts, value);
     });
+    this.history.flush();
+    // 用定义对预填的原始点补算派生点（不触发告警/推送），保证走势与回放开箱即用
+    this.derived.backfill(now, this.config.prefillMs, this.config.tickMs);
     this.history.flush();
 
     this.tickTimer = setInterval(() => this.runTick(), this.config.tickMs);
@@ -60,6 +72,7 @@ export class Runtime {
     return {
       type: 'snapshot' as const,
       sources: this.registry.list(),
+      derived: this.derived.list(),
       rules: this.configStore.getRules(),
       actives: this.alerts.getActives(),
       latest: this.history.latestAll(),
@@ -67,28 +80,31 @@ export class Runtime {
     };
   }
 
-  /** 一个实时节拍：模拟产出 -> 留档 -> 告警判定 -> 服务端主动推送。 */
+  /** 一个实时节拍：模拟产出 -> 留档 -> 原始/派生告警判定 -> 服务端主动推送。 */
   runTick(ts: number = Date.now()): MetricPoint[] {
     const points = this.simulator.tick(ts);
-    if (points.length) this.ingestPoints(points);
-    // 源状态（含故障标记）也每拍同步给页面
+    if (points.length) {
+      const derived = this.ingestPoints(points);
+      void derived;
+    }
+    // 源状态（含故障标记）与派生状态也每拍同步给页面
     this.hub.broadcast(this.buildSnapshot());
     return points;
   }
 
   /**
-   * 采集单个点（实时路径与测试注入路径共用）：
-   * 留档（24h）、告警判定、通过长连接主动推给页面。
+   * 采集单个点（实时路径与测试注入路径共用）。
    */
   ingest(point: MetricPoint): IngestResult {
-    this.history.add(point.sourceId, point.ts, point.value);
-    this.registry.reportPoint(point.sourceId, point.ts);
-    const events = this.alerts.evaluate(point);
-    if (events.length) this.emitAlertEvents(events);
-    this.hub.broadcast({ type: 'metrics', points: [point] });
+    const events = this.ingestPoints([point]);
     return { point, events };
   }
 
+  /**
+   * 采集一批点（实时路径与测试注入路径共用）：
+   * 原始点先留档 + 告警判定，再交给派生引擎按拓扑序算出派生点
+   * （派生点同样留档 + 告警判定），最后原始点与派生点一起推送。
+   */
   ingestPoints(points: MetricPoint[]): AlertEvent[] {
     const allEvents: AlertEvent[] = [];
     for (const p of points) {
@@ -96,8 +112,12 @@ export class Runtime {
       this.registry.reportPoint(p.sourceId, p.ts);
       allEvents.push(...this.alerts.evaluate(p));
     }
-    if (eventsAny(allEvents)) this.emitAlertEvents(allEvents);
-    this.hub.broadcast({ type: 'metrics', points });
+    // 派生点在同一拍内紧接着算出，与原始点同等地留档、告警、推送
+    const computed = this.derived.consume(points, { evaluateAlerts: true });
+    allEvents.push(...computed.events);
+
+    if (allEvents.length) this.emitAlertEvents(allEvents);
+    this.hub.broadcast({ type: 'metrics', points: [...points, ...computed.points] });
     return allEvents;
   }
 
@@ -122,13 +142,14 @@ export class Runtime {
     this.hub.broadcast({ type: 'rules', rules: this.configStore.getRules() });
   }
 
+  /** 派生定义增删改后，把新的运行态与最新值同步给所有页面。 */
+  broadcastDerived(): void {
+    this.hub.broadcast({ type: 'derived', derived: this.derived.list() });
+  }
+
   stop(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     this.history.close();
   }
-}
-
-function eventsAny(events: AlertEvent[]): boolean {
-  return events.length > 0;
 }

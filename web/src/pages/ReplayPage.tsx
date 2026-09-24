@@ -9,6 +9,7 @@ import ChartCard from '../components/ChartCard';
 import TrendLine from '../components/charts/TrendLine';
 import GaugeChart from '../components/charts/GaugeChart';
 import { formatClock, formatDateTimeLocal } from '../utils/format';
+import { buildMetricViews, type MetricView } from '../utils/metrics';
 import type { HistoryResponse, MetricPoint } from '../types';
 
 const COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f97316', '#06b6d4', '#eab308'];
@@ -19,7 +20,13 @@ const RENDER_EVERY_MS = 120;
 
 export default function ReplayPage() {
   const sources = useDashboard((s) => s.sources);
-  const enabledDefs = sources.filter((s) => s.enabled).map((s) => s.def);
+  const derived = useDashboard((s) => s.derived);
+  // 可回放指标：开启的原始源 + 未失效的派生指标（回放的是它们当时逐点留存的真实序列）
+  const metricViews: MetricView[] = useMemo(
+    () => buildMetricViews(sources, derived).filter((m) => (m.kind === 'derived' ? !m.broken : m.enabled)),
+    [sources, derived],
+  );
+  const viewOf = useMemo(() => new Map(metricViews.map((m) => [m.id, m])), [metricViews]);
 
   const now = Date.now();
   const [fromInput, setFromInput] = useState(formatDateTimeLocal(now - 5 * 60 * 1000));
@@ -36,10 +43,10 @@ export default function ReplayPage() {
   const lastFrameRef = useRef<{ wall: number; cursor: number } | null>(null);
 
   useEffect(() => {
-    if (sources.length && selected.length === 0) {
-      setSelected(sources.filter((s) => s.enabled).slice(0, 3).map((s) => s.def.id));
+    if (metricViews.length && selected.length === 0) {
+      setSelected(metricViews.slice(0, 3).map((m) => m.id));
     }
-  }, [sources]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [metricViews]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     const from = new Date(fromInput).getTime();
@@ -93,17 +100,20 @@ export default function ReplayPage() {
   // 截至游标的可见点
   const visible = useMemo(() => {
     if (!data || cursor === null) return [] as { sourceId: string; name: string; color: string; points: MetricPoint[] }[];
-    return selected.map((id, i) => ({
-      sourceId: id,
-      name: sources.find((s) => s.def.id === id)?.def.name ?? id,
-      color: COLORS[i % COLORS.length],
-      points: (data.series[id]?.points ?? [])
-        .filter((p) => p.ts <= cursor)
-        // 高密度区间下采样，保证 5x 播放时画面仍流畅
-        .filter((_, idx, arr) => arr.length < 600 || idx % Math.ceil(arr.length / 600) === 0)
-        .map((p) => ({ sourceId: id, ts: p.ts, value: p.value })),
-    }));
-  }, [data, cursor, selected, sources]);
+    return selected.map((id, i) => {
+      const m = viewOf.get(id);
+      return {
+        sourceId: id,
+        name: (m?.kind === 'derived' ? 'Σ ' : '') + (m?.name ?? id),
+        color: m?.kind === 'derived' ? '#a855f7' : COLORS[i % COLORS.length],
+        points: (data.series[id]?.points ?? [])
+          .filter((p) => p.ts <= cursor)
+          // 高密度区间下采样，保证 5x 播放时画面仍流畅
+          .filter((_, idx, arr) => arr.length < 600 || idx % Math.ceil(arr.length / 600) === 0)
+          .map((p) => ({ sourceId: id, ts: p.ts, value: p.value })),
+      };
+    });
+  }, [data, cursor, selected, viewOf]);
 
   const toggleSource = (id: string) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -145,10 +155,11 @@ export default function ReplayPage() {
           </div>
         </div>
         <div className="replay-sources">
-          {enabledDefs.map((d) => (
-            <label key={d.id} className={`chip ${selected.includes(d.id) ? 'chip-on' : ''}`}>
-              <input type="checkbox" checked={selected.includes(d.id)} onChange={() => toggleSource(d.id)} />
-              {d.name}
+          {metricViews.map((m) => (
+            <label key={m.id} className={`chip ${selected.includes(m.id) ? 'chip-on' : ''}`}>
+              <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggleSource(m.id)} />
+              {m.kind === 'derived' ? 'Σ ' : ''}
+              {m.name}
             </label>
           ))}
         </div>
@@ -193,11 +204,11 @@ export default function ReplayPage() {
             />
             <div className="replay-gauges">
               {visible.map((s) => {
-                const def = sources.find((x) => x.def.id === s.sourceId)?.def;
+                const m = viewOf.get(s.sourceId);
                 const last = s.points[s.points.length - 1];
                 return (
                   <div key={s.sourceId} className="replay-gauge">
-                    <GaugeChart title={s.name} unit={def?.unit ?? ''} max={def?.max ?? 100} decimals={def?.decimals ?? 1} value={last?.value ?? null} />
+                    <GaugeChart title={s.name} unit={m?.unit ?? ''} max={m?.max ?? 100} decimals={m?.decimals ?? 1} value={last?.value ?? null} />
                   </div>
                 );
               })}

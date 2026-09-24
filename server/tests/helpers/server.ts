@@ -21,12 +21,15 @@ export interface TestServer {
 
 let portCounter = 4100;
 
-export async function startServer(opts: { tickMs?: number; retentionMs?: number } = {}): Promise<TestServer> {
+export async function startServer(
+  opts: { tickMs?: number; retentionMs?: number; dataDir?: string; prefillMs?: number; keepDataDir?: boolean } = {},
+): Promise<TestServer> {
   if (!fs.existsSync(SERVER_ENTRY)) {
     throw new Error('未找到 server/dist/index.js，请先执行 npm run build（workspace server）');
   }
   const port = ++portCounter;
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-dash-test-'));
+  const ownsDir = !opts.dataDir;
+  const dataDir = opts.dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'ops-dash-test-'));
   const child = spawn(process.execPath, [SERVER_ENTRY], {
     env: {
       ...process.env,
@@ -36,7 +39,7 @@ export async function startServer(opts: { tickMs?: number; retentionMs?: number 
       TICK_MS: String(opts.tickMs ?? 250),
       HISTORY_RETENTION_MS: String(opts.retentionMs ?? 24 * 60 * 60 * 1000),
       ENABLE_TEST_API: 'true',
-      PREFILL_MS: '0',
+      PREFILL_MS: String(opts.prefillMs ?? 0),
       PRUNE_INTERVAL_MS: '3600000',
       LOG_LEVEL: 'silent',
     },
@@ -74,10 +77,12 @@ export async function startServer(opts: { tickMs?: number; retentionMs?: number 
         }, 3000);
         const finish = () => {
           clearTimeout(timer);
-          try {
-            fs.rmSync(dataDir, { recursive: true, force: true });
-          } catch {
-            /* 忽略清理失败 */
+          if (ownsDir && !opts.keepDataDir) {
+            try {
+              fs.rmSync(dataDir, { recursive: true, force: true });
+            } catch {
+              /* 忽略清理失败 */
+            }
           }
           resolve();
         };

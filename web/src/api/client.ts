@@ -1,5 +1,5 @@
 /** REST 接口封装。生产与开发态都走同源 /api。 */
-import type { AlertLevel, AlertOperator, HistoryResponse, LayoutConfig, SourceState, AlertRule } from '../types';
+import type { AlertLevel, AlertOperator, HistoryResponse, LayoutConfig, SourceState, AlertRule, DerivedState } from '../types';
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -22,9 +22,19 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
 
-  rules: () => jsonFetch<AlertRule[]>('/api/alerts/rules'),
+  derived: () => jsonFetch<DerivedState[]>('/api/derived'),
 
-  createRule: (input: { sourceId: string; level: AlertLevel; operator: AlertOperator; threshold: number; enabled: boolean; note: string }) =>
+  createDerived: (input: { name: string; unit: string; decimals: number; max: number; formula: string; description: string }) =>
+    jsonFetch<DerivedState>('/api/derived', { method: 'POST', body: JSON.stringify(input) }),
+
+  updateDerived: (
+    id: string,
+    patch: Partial<{ name: string; unit: string; decimals: number; max: number; formula: string; description: string }>,
+  ) => jsonFetch<DerivedState>(`/api/derived/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+
+  deleteDerived: (id: string) => jsonFetch<{ ok: true }>(`/api/derived/${id}`, { method: 'DELETE' }),
+
+  rules: () => jsonFetch<AlertRule[]>('/api/alerts/rules'),  createRule: (input: { sourceId: string; level: AlertLevel; operator: AlertOperator; threshold: number; enabled: boolean; note: string }) =>
     jsonFetch<AlertRule>('/api/alerts/rules', { method: 'POST', body: JSON.stringify(input) }),
 
   updateRule: (

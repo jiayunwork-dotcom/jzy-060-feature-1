@@ -76,7 +76,10 @@ export class Simulator {
     return false;
   }
 
-  /** 生成一个节拍：仅对“已开启且非异常”的源产出数据点。 */
+  /**
+   * 生成一个节拍：仅对“已开启且非异常”的源产出数据点。
+   * 留档 / 状态上报 / 推送统一由 runtime.ingestPoints 完成，这里只负责取值。
+   */
   tick(ts: number): MetricPoint[] {
     const out: MetricPoint[] = [];
     for (const state of this.registry.list()) {
@@ -91,7 +94,6 @@ export class Simulator {
       const raw = this.rawValue(state.def.id, ts);
       const value = Number(raw.toFixed(state.def.decimals));
       out.push({ sourceId: state.def.id, ts, value });
-      this.registry.reportPoint(state.def.id, ts);
     }
     return out;
   }

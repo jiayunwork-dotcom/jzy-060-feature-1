@@ -4,12 +4,14 @@ import { useDashboard } from '../store/useDashboard';
 export default function AlertBanner() {
   const actives = useDashboard((s) => s.actives);
   const sources = useDashboard((s) => s.sources);
+  const derived = useDashboard((s) => s.derived);
 
   if (actives.length === 0) {
     return <div className="alert-banner alert-none">当前无激活告警，所有已配置规则均处于安全区间</div>;
   }
 
-  const nameOf = (id: string) => sources.find((s) => s.def.id === id)?.def.name ?? id;
+  const nameOf = (id: string) =>
+    sources.find((s) => s.def.id === id)?.def.name ?? derived.find((d) => d.def.id === id)?.def.name ?? id;
 
   return (
     <div className="alert-banner-stack">
@@ -17,6 +19,7 @@ export default function AlertBanner() {
         <div key={a.id} className={`alert-banner ${a.level === 'critical' ? 'alert-critical' : 'alert-warning'}`}>
           <span className="alert-badge">{a.level === 'critical' ? '严重' : '警告'}</span>
           <span className="alert-text">
+            {derived.some((d) => d.def.id === a.sourceId) && <span className="tag tag-derived tag-mini">派生</span>}
             <strong>{nameOf(a.sourceId)}</strong> 当前 {a.value}，{a.operator} 阈值 {a.threshold}
           </span>
           <span className="alert-time">{new Date(a.ts).toLocaleTimeString('zh-CN', { hour12: false })}</span>

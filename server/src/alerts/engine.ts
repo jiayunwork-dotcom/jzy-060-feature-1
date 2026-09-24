@@ -115,6 +115,22 @@ export class AlertEngine {
     return event;
   }
 
+  /**
+   * 某指标当前不可用（派生指标本拍算不出来、依赖源无数据等）：清掉它的最近值，
+   * 并立即解除绑定它的激活告警。绝不允许后续重判（如改阈值）悄悄拿旧值判定。
+   * 返回由此产生的解除事件。
+   */
+  invalidateSource(sourceId: string, ts: number = Date.now()): AlertEvent[] {
+    this.lastValue.delete(sourceId);
+    const emitted: AlertEvent[] = [];
+    for (const rule of this.config.getRules()) {
+      if (rule.sourceId !== sourceId) continue;
+      const gone = this.deactivate(rule.id, ts);
+      if (gone) emitted.push(gone);
+    }
+    return emitted;
+  }
+
   setLastValue(sourceId: string, value: number): void {
     this.lastValue.set(sourceId, value);
   }
